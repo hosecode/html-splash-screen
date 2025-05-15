@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Telemetry Waves</title>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@500&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      background: #0b1d2a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: 'Lexend Deca', sans-serif;
+      overflow: hidden;
+    }
+    svg {
+      width: 100vw;
+      height: 100vh;
+    }
+    text {
+      font-family: 'Lexend Deca', sans-serif;
+      font-size: 48px;
+      font-weight: bold;
+      fill: white;
+    }
+  </style>
+</head>
+<body>
+  <svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">
+    <g id="waves"></g>
+    <text x="50%" y="350" text-anchor="middle">Telemetry</text>
+  </svg>
+
+  <script>
+    const waveCount = 20;
+    const waveLength = 600;
+    const waveSpacing = 12;
+    const waveColors = [
+      "#e63946", "#f1a208", "#52b788", "#43aa8b", "#4361ee",
+      "#4cc9f0", "#9d4edd", "#ff006e", "#06d6a0", "#f72585"
+    ];
+
+    const wavesGroup = document.getElementById('waves');
+    const waves = [];
+
+    function randomNoise(x, t, settings) {
+      return (
+        Math.sin(x * settings.freq1 + t * 0.001 + settings.phase1) +
+        Math.sin(x * settings.freq2 + t * 0.002 + settings.phase2) * 0.5 +
+        Math.cos(x * settings.freq3 + t * 0.0015 + settings.phase3) * 0.3
+      ) * settings.amp;
+    }
+
+    for (let i = 0; i < waveCount; i++) {
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("stroke", waveColors[i % waveColors.length]);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke-width", 1.5);
+      wavesGroup.appendChild(path);
+
+      waves.push({
+        path,
+        offset: Math.random() * 1000,
+        pulsing: false,
+        majorPulsing: false,
+        superPulsing: false,
+        pulseStart: 0,
+        pulseType: null,
+        spikes: [],
+        noiseSettings: {
+          freq1: 0.03 + Math.random() * 0.02,
+          freq2: 0.06 + Math.random() * 0.03,
+          freq3: 0.02 + Math.random() * 0.01,
+          amp: 3 + Math.random() * 2,
+          phase1: Math.random() * Math.PI * 2,
+          phase2: Math.random() * Math.PI * 2,
+          phase3: Math.random() * Math.PI * 2
+        }
+      });
+    }
+
+    function maybeTriggerPulse(wave, now) {
+      if (!wave.pulsing && Math.random() < 0.006) {
+        wave.pulsing = true;
+        wave.superPulsing = Math.random() < 0.01;
+        wave.majorPulsing = !wave.superPulsing && Math.random() < 0.2;
+        wave.pulseType = wave.superPulsing ? 'super' : (wave.majorPulsing ? 'major' : 'medium');
+        wave.pulseStart = now;
+
+        const spikes = [];
+        let spikeCount, ampRange;
+        if (wave.superPulsing) {
+          spikeCount = 20;
+          ampRange = [50, 80];
+        } else if (wave.majorPulsing) {
+          spikeCount = 10;
+          ampRange = [30, 50];
+        } else {
+          spikeCount = 6;
+          ampRange = [10, 20];
+        }
+
+        for (let i = 0; i < spikeCount; i++) {
+          spikes.push({
+            freq: 0.01 + Math.random() * 0.1,
+            phase: Math.random() * Math.PI * 2,
+            amp: ampRange[0] + Math.random() * (ampRange[1] - ampRange[0])
+          });
+        }
+        wave.spikes = spikes;
+      }
+    }
+
+    function getPulseContribution(x, t, wave, timeSinceStart) {
+      if (!wave.pulsing) return 0;
+      const duration = wave.superPulsing ? 1500 : (wave.majorPulsing ? 1000 : 400);
+      const envelope = Math.sin((Math.PI * timeSinceStart) / duration);
+      let sum = 0;
+      for (const spike of wave.spikes) {
+        sum += Math.sin(x * spike.freq + spike.phase + t * 0.005) * spike.amp;
+      }
+      return sum * envelope * 0.15;
+    }
+
+    function animate(t) {
+      waves.forEach((wave, i) => {
+        const yOffset = 40 + i * waveSpacing;
+        maybeTriggerPulse(wave, t);
+        const timeSinceStart = t - wave.pulseStart;
+
+        wave.noiseSettings.phase1 += 0.0008;
+        wave.noiseSettings.phase2 += 0.0006;
+        wave.noiseSettings.phase3 += 0.0004;
+
+        let d = `M 0 ${yOffset}`;
+        for (let x = 0; x <= waveLength; x += 6) {
+          const base = randomNoise(x, t, wave.noiseSettings);
+          const pulse = wave.pulsing && (timeSinceStart < (wave.superPulsing ? 1500 : (wave.majorPulsing ? 1000 : 400)))
+            ? getPulseContribution(x, t, wave, timeSinceStart)
+            : 0;
+
+          const y = yOffset + base + pulse;
+          d += ` L ${x} ${y}`;
+        }
+
+        if (wave.pulsing && timeSinceStart > (wave.superPulsing ? 1500 : (wave.majorPulsing ? 1000 : 400))) {
+          wave.pulsing = false;
+          wave.majorPulsing = false;
+          wave.superPulsing = false;
+        }
+
+        wave.path.setAttribute("d", d);
+      });
+
+      requestAnimationFrame(animate);
+    }
+
+    animate(0);
+  </script>
+</body>
+</html>

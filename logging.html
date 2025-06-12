@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Logging Stream</title>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@500&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      background: #0b1d2a;
+      color: white;
+      font-family: 'Lexend Deca', sans-serif;
+      overflow: hidden;
+    }
+    .log-container {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90%;
+      height: 90vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      z-index: 2;
+    }
+    .log-line {
+      opacity: 0.5;
+      transform: translateY(20px);
+      animation: floatUp 0.8s ease-out forwards;
+      white-space: pre-wrap;
+      margin-bottom: 4px;
+    }
+    @keyframes floatUp {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .info { color: #4cc9f0; font-size: 16px; }
+    .warn { color: #f1a208; font-size: 18px; }
+    .error { color: #e63946; font-size: 20px; }
+    .debug { color: #43aa8b; font-size: 14px; }
+    .header {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      font-size: 48px;
+      color: #ffffff;
+      z-index: 3;
+    }
+    .bit-line {
+      position: absolute;
+      top: 0;
+      white-space: nowrap;
+      opacity: 0.9;
+      color: #ccc;
+      animation: scrollBits linear infinite;
+      font-family: monospace;
+    }
+    @keyframes scrollBits {
+      from { transform: translateX(100vw); }
+      to { transform: translateX(-100vw); }
+    }
+  </style>
+</head>
+<body>
+  <div class="log-container" id="logContainer"></div>
+  <div class="header">Logging</div>
+
+  <script>
+    const logContainer = document.getElementById('logContainer');
+    const levels = ['info', 'warn', 'error', 'debug'];
+    const messages = [
+      'Connected to server.',
+      'Fetching logs...',
+      'User session started.',
+      'Cache miss: regenerating index.',
+      'Warning: slow query detected.',
+      'Error: service timeout on /api/metrics',
+      'Debug mode enabled.',
+      'Retrying connection...',
+      'Log flushed to disk.',
+      'Heartbeat received.',
+      'User logout detected.',
+      'Stream synchronized.',
+      'Backup started.',
+      'Backup completed successfully.',
+      'Memory usage high.',
+      'CPU load balanced.',
+      'Connection dropped unexpectedly.',
+      'Recovery initiated.',
+      'Patch applied.',
+      'New client connected.'
+    ];
+
+    function addLogLine() {
+      const line = document.createElement('div');
+      const level = levels[Math.floor(Math.random() * levels.length)];
+      const text = messages[Math.floor(Math.random() * messages.length)];
+
+      line.className = `log-line ${level}`;
+      line.textContent = `[${level.toUpperCase()}] ${text}`;
+
+      logContainer.appendChild(line);
+
+      logContainer.scrollTop = logContainer.scrollHeight;
+
+      if (logContainer.children.length > 80) {
+        logContainer.removeChild(logContainer.children[0]);
+      }
+    }
+
+    setInterval(addLogLine, 400);
+
+    // Background moving bits
+    function spawnBitLine() {
+      const bitLine = document.createElement('div');
+      bitLine.className = 'bit-line';
+      bitLine.style.top = `${Math.random() * 100}vh`;
+      bitLine.style.animationDuration = `${6 + Math.random() * 6}s`;
+      bitLine.style.fontSize = `${10 + Math.random() * 20}px`;
+      bitLine.style.color = ['#ccc', '#4cc9f0', '#f1a208', '#43aa8b', '#e63946'][Math.floor(Math.random() * 5)];
+      bitLine.style.opacity = 0.9;
+      bitLine.textContent = Array.from({ length: 60 + Math.random() * 40 }, () => Math.random() > 0.5 ? '1' : '0').join('');
+      document.body.appendChild(bitLine);
+
+      setTimeout(() => document.body.removeChild(bitLine), 15000);
+    }
+
+    setInterval(spawnBitLine, 400);
+  </script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Events Network</title>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #0b1d2a;
+      overflow: hidden;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    .header {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      font-size: 100px;
+      color: #ffffff;
+      z-index: 3;
+    }
+    .fps-counter {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #ffffff;
+      font-size: 14px;
+      font-family: monospace;
+      z-index: 4;
+    }
+    .log-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 30%;
+      max-height: 30%;
+      overflow-y: auto;
+      background-color: rgba(0, 0, 0, 0.1);
+      color: #ffffff;
+      font-size: 12px;
+      font-family: monospace;
+      padding: 10px;
+      box-sizing: border-box;
+      z-index: 5;
+    }
+    .metrics-chart {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 30%;
+      max-height: 30%;
+      background-color: rgba(0, 0, 0, 0.1);
+      padding: 10px;
+      box-sizing: border-box;
+      z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="eventsCanvas"></canvas>
+  <div class="header">Events</div>
+  <div class="fps-counter" id="fpsCounter"></div>
+  <div class="log-overlay" id="logOverlay"></div>
+  <div class="metrics-chart">
+    <canvas id="timeSeriesChart"></canvas>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('eventsCanvas');
+    const ctx = canvas.getContext('2d');
+    const logOverlay = document.getElementById('logOverlay');
+    const LOGGING_ENABLED = true;
+
+    function logEvent(message) {
+      if (!LOGGING_ENABLED) return;
+      const timestamp = new Date().toLocaleTimeString();
+      const line = `[${timestamp}] ${message}`;
+      logOverlay.textContent += line + "\n";
+      logOverlay.scrollTop = logOverlay.scrollHeight;
+    }
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const gradientColors = [
+      '#e63946', '#f1a208', '#52b788', '#43aa8b', '#4361ee',
+      '#4cc9f0', '#9d4edd', '#ff006e', '#06d6a0', '#f72585'
+    ];
+
+    let nodes = [];
+    let connections = [];
+    let MAX_NODES = 15;
+    let MAX_EDGES = 40;
+    const MAX_EDGES_PER_FRAME = 1;
+
+    setInterval(() => {
+      MAX_NODES = 10 + Math.floor(Math.random() * 10);
+      MAX_EDGES = 30 + Math.floor(Math.random() * 30);
+      logEvent(`Network limits changed: MAX_NODES=${MAX_NODES}, MAX_EDGES=${MAX_EDGES}`);
+    }, 8000);
+
+    function createNode(now) {
+      const width = canvas.width;
+      const height = canvas.height;
+      const spacing = 100;
+      let tries = 50;
+
+      while (tries-- > 0) {
+        const angle = Math.random() * 2 * Math.PI;
+        const radius = Math.sqrt(Math.random()) * Math.min(width, height) * 0.4;
+        const nodeY = height * 0.1 + Math.random() * height * 0.6;
+        const nodeX = width / 2 + radius * Math.cos(angle);
+
+        const clampedX = Math.max(0, Math.min(width, nodeX));
+        const clampedY = Math.max(0, Math.min(height, nodeY));
+
+        let tooClose = false;
+        for (const n of nodes) {
+          const dx = n.x - clampedX;
+          const dy = n.y - clampedY;
+          if (Math.sqrt(dx * dx + dy * dy) < spacing) {
+            tooClose = true;
+            break;
+          }
+        }
+
+        if (!tooClose) {
+          const ttl = 17000 + Math.random() * 10000;
+          const newNode = {
+            id: crypto.randomUUID(),
+            x: clampedX,
+            y: clampedY,
+            radius: 6 + Math.random() * 14,
+            color: gradientColors[Math.floor(Math.random() * gradientColors.length)],
+            createdAt: now,
+            ttl: ttl,
+            opacity: 0.2 + Math.random() * 0.3,
+            age(now) { return now - this.createdAt; }
+          };
+          logEvent(`Node created at (${Math.round(newNode.x)}, ${Math.round(newNode.y)}) with TTL ${Math.round(ttl)}ms`);
+          return newNode;
+        }
+      }
+      return null;
+    }
+
+    function createConnection(fromNode, toNode, now) {
+      const newConn = {
+        from: fromNode,
+        to: toNode,
+        birth: now,
+        duration: 7000 + Math.random() * 15000,
+        color: gradientColors[Math.floor(Math.random() * gradientColors.length)],
+        thickness: 0.5 + Math.random() * 3.5,
+        age(now) { return now - this.birth; }
+      };
+      logEvent(`Connection created: (${Math.round(fromNode.x)},${Math.round(fromNode.y)}) → (${Math.round(toNode.x)},${Math.round(toNode.y)})`);
+      return newConn;
+    }
+
+    function maintainNetwork(now) {
+      nodes = nodes.filter(n => n.age(now) < n.ttl);
+
+      if (nodes.length < MAX_NODES && Math.random() < 0.2 * (MAX_NODES - nodes.length)) {
+        const newNode = createNode(now);
+        if (newNode) nodes.push(newNode);
+      }
+
+      connections = connections.filter(c => (c.age(now) < c.duration) && nodes.includes(c.from) && nodes.includes(c.to));
+
+      let newEdges = 0;
+      while (nodes.length > 1 && connections.length < MAX_EDGES && newEdges < MAX_EDGES_PER_FRAME && Math.random() < 0.1) {
+        let fromNode, toNode, i = 0;
+        do {
+          i++;
+          fromNode = nodes[Math.floor(Math.random() * nodes.length)];
+          toNode = nodes[Math.floor(Math.random() * nodes.length)];
+        } while ((fromNode === toNode || fromNode.age(now) < 1000 || toNode.age(now) < 1000) && i < 100);
+        if (i > 99) break;
+        connections.push(createConnection(fromNode, toNode, now));
+        newEdges++;
+      }
+    }
+
+    const chartCtx = document.getElementById('timeSeriesChart').getContext('2d');
+    const metricsChart = new Chart(chartCtx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'Nodes', data: [], borderColor: '#4cc9f0', fill: false },
+          { label: 'Edges', data: [], borderColor: '#f1a208', fill: false },
+          { label: 'Avg TTL', data: [], borderColor: '#52b788', fill: false },
+          { label: 'Max TTL', data: [], borderColor: '#e63946', fill: false },
+        ]
+      },
+      options: {
+        responsive: true,
+        animation: false,
+        scales: {
+          x: { ticks: { color: '#ffffff' } },
+          y: { ticks: { color: '#ffffff' } }
+        },
+        plugins: {
+          legend: { labels: { color: '#ffffff' } }
+        }
+      }
+    });
+
+    function updateChartMetrics(now) {
+      const ts = new Date(now).toLocaleTimeString();
+      const avgTTL = nodes.length ? nodes.reduce((sum, n) => sum + n.ttl, 0) / nodes.length : 0;
+      const maxTTL = nodes.length ? Math.max(...nodes.map(n => n.ttl)) : 0;
+
+      metricsChart.data.labels.push(ts);
+      metricsChart.data.datasets[0].data.push(nodes.length);
+      metricsChart.data.datasets[1].data.push(connections.length);
+      metricsChart.data.datasets[2].data.push(avgTTL);
+      metricsChart.data.datasets[3].data.push(maxTTL);
+
+      if (metricsChart.data.labels.length > 20) {
+        metricsChart.data.labels.shift();
+        metricsChart.data.datasets.forEach(d => d.data.shift());
+      }
+
+      metricsChart.update();
+    }
+
+    setInterval(() => updateChartMetrics(Date.now()), 3000);
+
+    let totalFrameCount = 0;
+    let frameCount = 0;
+    let lastTime = performance.now();
+    let fps = 0;
+
+    function updateFPSCounter() {
+      const fpsEl = document.getElementById('fpsCounter');
+      fpsEl.textContent = `Frame #: ${totalFrameCount} | FPS: ${fps.toFixed(1)}`;
+    }
+
+    function draw() {
+      frameCount++;
+      totalFrameCount++;
+      const now = Date.now();
+      const perfNow = performance.now();
+
+      if (perfNow - lastTime >= 1000) {
+        fps = (frameCount * 1000) / (perfNow - lastTime);
+        frameCount = 0;
+        lastTime = perfNow;
+      }
+      updateFPSCounter();
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      maintainNetwork(now);
+
+      for (const conn of connections) {
+        const age = conn.age(now);
+        const life = conn.duration;
+        const fade = Math.sin((age / life) * Math.PI);
+        const smoothedAlpha = Math.pow(Math.min(1, fade), 2.5);
+        const edgeAlpha = Math.floor(smoothedAlpha * 180 + 20).toString(16).padStart(2, '0');
+
+        ctx.strokeStyle = conn.color + edgeAlpha;
+        ctx.lineWidth = conn.thickness;
+        ctx.beginPath();
+        ctx.moveTo(conn.from.x, conn.from.y);
+        ctx.lineTo(conn.to.x, conn.to.y);
+        ctx.stroke();
+      }
+
+      for (const node of nodes) {
+        const pulse = (Math.sin(now * 0.002 + node.radius) + 1) / 2;
+        const r = node.radius + pulse * 2.5;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+        const nodeAlpha = Math.floor(255 * node.opacity).toString(16).padStart(2, '0');
+        ctx.fillStyle = `${node.color}${nodeAlpha}`;
+        ctx.fill();
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+  </script>
+</body>
+</html>

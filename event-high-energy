@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Events Network</title>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #0b1d2a;
+      overflow: hidden;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    .header {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      font-size: 100px;
+      color: #ffffff;
+      z-index: 3;
+    }
+    .fps-counter {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #ffffff;
+      font-size: 14px;
+      font-family: monospace;
+      z-index: 4;
+    }
+    .log-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 30%;
+      max-height: 30%;
+      overflow-y: auto;
+      background-color: rgba(0, 0, 0, 0.05);
+      color: #ffffff;
+      font-size: 12px;
+      font-family: monospace;
+      padding: 10px;
+      box-sizing: border-box;
+      z-index: 5;
+      pointer-events: none;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="eventsCanvas"></canvas>
+  <div class="header">Events</div>
+  <div class="fps-counter" id="fpsCounter"></div>
+  <div class="log-overlay" id="logOverlay"></div>
+
+  <script>
+    const canvas = document.getElementById('eventsCanvas');
+    const ctx = canvas.getContext('2d');
+    const logOverlay = document.getElementById('logOverlay');
+
+    function logEvent(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      const line = `[${timestamp}] ${message}`;
+      logOverlay.textContent += line + "\n";
+      logOverlay.scrollTop = logOverlay.scrollHeight;
+    }
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const gradientColors = [
+      '#e63946', '#f1a208', '#52b788', '#43aa8b', '#4361ee',
+      '#4cc9f0', '#9d4edd', '#ff006e', '#06d6a0', '#f72585'
+    ];
+
+    const nodes = [];
+    const edges = [];
+
+    function createNode() {
+      return {
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        radius: Math.random() * 5 + 2,
+        color: gradientColors[Math.floor(Math.random() * gradientColors.length)],
+        ttl: Math.random() * 100 + 50
+      };
+    }
+
+    function createEdge(from, to) {
+      return {
+        from,
+        to,
+        width: Math.random() * 2 + 1,
+        color: gradientColors[Math.floor(Math.random() * gradientColors.length)],
+        ttl: Math.random() * 100 + 50
+      };
+    }
+
+    for (let i = 0; i < 50; i++) nodes.push(createNode());
+    for (let i = 0; i < 80; i++) {
+      const from = nodes[Math.floor(Math.random() * nodes.length)];
+      const to = nodes[Math.floor(Math.random() * nodes.length)];
+      if (from !== to) edges.push(createEdge(from, to));
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (const edge of edges) {
+        ctx.beginPath();
+        ctx.moveTo(edge.from.x, edge.from.y);
+        ctx.lineTo(edge.to.x, edge.to.y);
+        ctx.strokeStyle = edge.color;
+        ctx.lineWidth = edge.width;
+        ctx.globalAlpha = Math.min(1, edge.ttl / 100);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      for (const node of nodes) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, node.radius, 0, 2 * Math.PI);
+        ctx.fillStyle = node.color;
+        ctx.globalAlpha = Math.min(1, node.ttl / 100);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    function update() {
+      for (const node of nodes) node.ttl--;
+      for (const edge of edges) edge.ttl--;
+
+      while (nodes.length < 50) nodes.push(createNode());
+      while (edges.length < 80) {
+        const from = nodes[Math.floor(Math.random() * nodes.length)];
+        const to = nodes[Math.floor(Math.random() * nodes.length)];
+        if (from !== to) edges.push(createEdge(from, to));
+      }
+
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        if (nodes[i].ttl <= 0) nodes.splice(i, 1);
+      }
+
+      for (let i = edges.length - 1; i >= 0; i--) {
+        if (edges[i].ttl <= 0) edges.splice(i, 1);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>

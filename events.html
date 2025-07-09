@@ -106,7 +106,7 @@
             color: gradientColors[Math.floor(Math.random() * gradientColors.length)],
             createdAt: now,
             ttl: 17000 + Math.random() * 10000,
-            opacity: 0.2 + Math.random() * 0.3,
+            opacity: 0.7 + Math.random() * 0.3,
             age(now) { return now - this.createdAt; }
           };
         }
@@ -182,7 +182,7 @@
         const life = conn.duration;
         const fade = Math.sin((age / life) * Math.PI);
         const smoothedAlpha = Math.pow(Math.min(1, fade), 2.5);
-        const edgeAlpha = Math.floor(smoothedAlpha * 180 + 20).toString(16).padStart(2, '0');
+        const edgeAlpha = Math.floor(smoothedAlpha * 180 + 40).toString(16).padStart(2, '0');
 
         ctx.strokeStyle = conn.color + edgeAlpha;
         ctx.lineWidth = conn.thickness;

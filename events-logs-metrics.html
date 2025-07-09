@@ -38,9 +38,9 @@
       left: 0;
       width: 30%;
       max-height: 30%;
-      overflow-y: auto;
-      background-color: rgba(0, 0, 0, 0.1);
-      color: #ffffff;
+      overflow-y: hidden;
+      background-color: rgba(0, 0, 0, 0.05);
+      color: rgba(255, 255, 255, 0.5);
       font-size: 12px;
       font-family: monospace;
       padding: 10px;
@@ -197,10 +197,11 @@
       data: {
         labels: [],
         datasets: [
-          { label: 'Nodes', data: [], borderColor: '#4cc9f0', fill: false },
-          { label: 'Edges', data: [], borderColor: '#f1a208', fill: false },
-          { label: 'Avg TTL', data: [], borderColor: '#52b788', fill: false },
-          { label: 'Max TTL', data: [], borderColor: '#e63946', fill: false },
+          { label: 'Nodes', data: [], borderColor: '#4cc9f0', fill: false, yAxisID: 'y' },
+          { label: 'Edges', data: [], borderColor: '#f1a208', fill: false, yAxisID: 'y' },
+          { label: 'Total Edge Length', data: [], borderColor: '#9d4edd', pointStyle: 'rectRot', fill: false, yAxisID: 'y1' },
+          { label: 'Avg TTL', data: [], borderColor: '#52b788', pointStyle: 'rectRot', fill: false, yAxisID: 'y1' },
+          { label: 'Max TTL', data: [], borderColor: '#e63946', pointStyle: 'rectRot', fill: false, yAxisID: 'y1' },
         ]
       },
       options: {
@@ -208,10 +209,33 @@
         animation: false,
         scales: {
           x: { ticks: { color: '#ffffff' } },
-          y: { ticks: { color: '#ffffff' } }
+          y: {
+            type: 'linear',
+            position: 'left',
+            ticks: { 
+              color: '#ffffff',
+              align: 'left'
+            }
+          },
+          y1: {
+            type: 'linear',
+            position: 'right',
+            ticks: { 
+              color: '#ffffff',
+              align: 'right'
+            },
+            grid: {
+              drawOnChartArea: false,
+            },
+          }
         },
         plugins: {
-          legend: { labels: { color: '#ffffff' } }
+          legend: {
+            labels: {
+              color: '#ffffff',
+              usePointStyle: true,
+            }
+          }
         }
       }
     });
@@ -224,8 +248,14 @@
       metricsChart.data.labels.push(ts);
       metricsChart.data.datasets[0].data.push(nodes.length);
       metricsChart.data.datasets[1].data.push(connections.length);
-      metricsChart.data.datasets[2].data.push(avgTTL);
-      metricsChart.data.datasets[3].data.push(maxTTL);
+      const totalEdgeLength = connections.reduce((sum, conn) => {
+        const dx = conn.to.x - conn.from.x;
+        const dy = conn.to.y - conn.from.y;
+        return sum + Math.sqrt(dx * dx + dy * dy);
+      }, 0);
+      metricsChart.data.datasets[2].data.push(totalEdgeLength);
+      metricsChart.data.datasets[3].data.push(avgTTL);
+      metricsChart.data.datasets[4].data.push(maxTTL);
 
       if (metricsChart.data.labels.length > 20) {
         metricsChart.data.labels.shift();

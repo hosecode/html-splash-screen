@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Particle Interaction</title>
+  <title>Particle</title>
   <style>
     body {
       margin: 0;
@@ -32,9 +32,12 @@
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    const particles = [];
-    const connectionDistance = 150;
-    const gradientColors = [
+const minParticles = 50;
+const maxParticles = 500;
+let currentMaxParticles = minParticles;
+const particles = [];
+const connectionDistance = 150;
+const gradientColors = [
       '#e63946', '#f1a208', '#52b788', '#43aa8b', '#4361ee',
       '#4cc9f0', '#9d4edd', '#ff006e', '#06d6a0', '#f72585'
     ];
@@ -65,11 +68,13 @@
       }
     }
 
-    function createParticle() {
-      const x = Math.random() * canvas.width;
-      const y = Math.random() * canvas.height;
-      particles.push(new Particle(x, y));
-    }
+function createParticle() {
+  // Safeguard: cap number of particles according to ebb/flow logic
+  if (particles.length >= currentMaxParticles) return;
+  const x = Math.random() * canvas.width;
+  const y = Math.random() * canvas.height;
+  particles.push(new Particle(x, y));
+}
 
     function drawConnections() {
       for (let i = 0; i < particles.length; i++) {

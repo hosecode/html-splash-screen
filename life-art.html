@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Automata Life-Art</title>
+  <style>
+    body {
+      margin: 0;
+      background: #10131c;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #10131c;
+    }
+    .info {
+      position: absolute;
+      color: #fffacd;
+      background: rgba(20,18,60,0.37);
+      top: 5px;
+      left: 5px;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font: 13px monospace;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="lifeCanvas"></canvas>
+  <div class="info" id="infoBox"></div>
+  <div class="fps-counter" id="fpsCounter"></div>
+  <button id="toggleOverlays" class="toggle-btn">Hide Logs & Metrics</button>
+  <div class="log-overlay" id="logOverlay"></div>
+  <div class="metrics-chart" id="metricsChartDiv">
+    <canvas id="metricsChart"></canvas>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // --- CONFIG ---
+    const CELL_SIZE = 8;
+    const GRID_W = Math.floor(window.innerWidth / CELL_SIZE);
+    const GRID_H = Math.floor(window.innerHeight / CELL_SIZE);
+    const INITIAL_POP = Math.floor((GRID_W * GRID_H) * 0.09); // ~9% filled at start
+    const MIN_POP = Math.floor((GRID_W * GRID_H) * 0.003); // reseed if below
+    const GENES = [
+      "#e63946", "#ffa600", "#48b44c", "#43aa8b", "#5854d8", "#9d4edd", "#ff006e",
+      "#ffd166", "#06d6a0", "#577399", "#aec6cf", "#b19cd9", "#f1e189", "#009688"
+    ];
+    const MUTATION_RATE = 0.09;          // chance cell mutates its gene
+    const COMET_EVENT_CHANCE = 0.006;    // chance to spawn a 'chaos' cluster event
+    const ENERGY_DECAY = 2;              // each tick cells lose energy
+    const INIT_ENERGY = 65;              // starting energy for new cell
+    const REPRODUCTION_COST = 14;        // cells lose energy when they reproduce
+    const MAX_RETRIES_TO_FILL = 50;
+
+    // --- DATA STRUCTURES ---
+    class Cell {
+      constructor(gene, energy, lineage, birthTick) {
+        this.gene = gene; // color/gene index
+        this.energy = energy;
+        this.lineage = lineage; // for genealogy/trail purposes
+        this.age = 0;
+        this.birthTick = birthTick || 0;
+      }
+    }
+
+    // --- CANVAS SETUP ---
+    const canvas = document.getElementById('lifeCanvas');
+    const ctx = canvas.getContext('2d');
+    const infoBox = document.getElementById('infoBox');
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+      // No grid resize for simplicity
+    });
+
+    // --- SIMULATION STATE ---
+    let grid = Array.from({length: GRID_W * GRID_H}, _ => null);
+    let tick = 0;
+    let living = 0;
+    let nextLineage = 1;
+
+    // neighbors delta: 8 directions
+    const nbs = [-1, +1, -GRID_W, +GRID_W, -GRID_W-1, -GRID_W+1, +GRID_W-1, +GRID_W+1];
+
+    // Seed initial population
+    function seedPopulation(n) {
+      let filled = 0, retries = 0;
+      while (filled < n && retries < MAX_RETRIES_TO_FILL * n) {
+        const idx = Math.floor(Math.random() * grid.length);
+        if (!grid[idx]) {
+          grid[idx] = new Cell(
+            Math.floor(Math.random() * GENES.length),
+            INIT_ENERGY + Math.floor(Math.random()*40),
+            nextLineage++,
+            tick
+          );
+          filled++;
+        }
+        retries++;
+      }
+    }
+
+    // --- CHAOS EVENT: Comet Bomb ---
+    function cometEvent() {
+      const x = Math.floor(Math.random() * (GRID_W - 8)) + 4;
+      const y = Math.floor(Math.random() * (GRID_H - 8)) + 4;
+      const g = Math.floor(Math.random() * GENES.length);
+      const lin = nextLineage++;
+      for (let dx = -3; dx <= 3; dx++) {
+        for (let dy = -3; dy <= 3; dy++) {
+          if (Math.abs(dx) + Math.abs(dy) < 5) { // diamond-shaped burst
+            const i = (y+dy)*GRID_W + (x+dx);
+            if (i >= 0 && i < grid.length) {
+              grid[i] = new Cell(g, INIT_ENERGY+Math.floor(Math.random()*50), lin, tick);
+            }
+          }
+        }
+      }
+    }
+
+    // --- SIMULATION LOGIC ---
+    function step() {
+      const newGrid = Array.from({length: GRID_W * GRID_H}, _ => null);
+      let pop = 0;
+      // Use for genealogy visual trails
+      const diedThisTick = new Set();
+
+      for (let y = 0; y < GRID_H; y++) {
+        for (let x = 0; x < GRID_W; x++) {
+          const idx = y * GRID_W + x;
+          const cell = grid[idx];
+          if (!cell) continue;
+
+          // --- Compute neighbors ---
+          let neighbors = [];
+          let nbGenes = {};
+          let nbEnergySum = 0;
+          for (const d of nbs) {
+            const ni = idx + d;
+            if (
+                ni >= 0 && ni < grid.length &&
+                (Math.abs(Math.floor((ni % (GRID_W)) - x)) <= 1) && // check if ni wraps around edge
+                grid[ni]) {
+              neighbors.push({cell: grid[ni], idx: ni});
+              nbGenes[grid[ni].gene] = (nbGenes[grid[ni].gene]||0) + 1;
+              nbEnergySum += grid[ni].energy;
+            }
+          }
+          // --- Rule: Stay alive if... ---
+          // Base: If 2 or 3 neighbors (like GoL), but genes matter.
+          let survive = false;
+          if (neighbors.length === 2 || neighbors.length === 3) {
+            // Survival tweaks: prefer if >50% have same gene
+            const sameGeneCount = nbGenes[cell.gene] || 0;
+            if (sameGeneCount >= Math.floor(neighbors.length / 2) || Math.random()<0.05) {
+              survive = true;
+            }
+            // Also: cells with higher energy randomly survive chaos
+            if (cell.energy > 80 && Math.random() < 0.12) survive = true;
+          }
+          // Decay energy
+          cell.energy -= ENERGY_DECAY + Math.floor(Math.random()*2);
+
+          // Death by entropy/age/energy
+          if (cell.energy < 0 || cell.age > 220 + Math.random()*140) survive = false;
+
+          if (survive) {
+            cell.age++;
+            newGrid[idx] = new Cell(
+              cell.gene,
+              cell.energy,
+              cell.lineage,
+              cell.birthTick
+            );
+            cell.geneTrail = (cell.geneTrail||[]).slice(-5); // maintain a short gene trail
+            pop++;
+          } else {
+            // for visual trail
+            diedThisTick.add(idx);
+          }
+
+          // Rule: Reproduction
+          // Like GoL: If empty neighbor, produce offspring if conditions right
+          if (neighbors.length === 3) {
+            // Find empty spot near, high energy, random mutation
+            for (const d of nbs) {
+              const ni = idx + d;
+              if (
+                  ni >= 0 && ni < grid.length &&
+                  (Math.abs(Math.floor((ni % (GRID_W)) - x)) <= 1) &&
+                  !grid[ni] && !newGrid[ni]
+                ) {
+                let gene = cell.gene;
+                // Mutation
+                if (Math.random() < MUTATION_RATE) {
+                  gene = Math.floor(Math.random() * GENES.length);
+                }
+                const lineage = cell.lineage;
+                newGrid[ni] = new Cell(
+                  gene,
+                  INIT_ENERGY + Math.floor(cell.energy/2),
+                  lineage,
+                  tick
+                );
+                // Parent loses energy to "pay" for reproduction
+                if (newGrid[idx]) newGrid[idx].energy -= REPRODUCTION_COST;
+                break;
+              }
+            }
+          }
+        }
+      }
+      grid = newGrid;
+      living = pop;
+    }
+
+    // --- AVOID STATIC/DEAD LANDSCAPE ---
+    function entropyCheckAndReseed() {
+      if (living < MIN_POP) {
+        // Either the world died, or fell to a non-viable state
+        seedPopulation(INITIAL_POP);
+      }
+    }
+
+    // --- MAIN ANIMATION ---
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Draw all living cells
+      for (let y = 0; y < GRID_H; y++) {
+        for (let x = 0; x < GRID_W; x++) {
+          const idx = y * GRID_W + x;
+          const cell = grid[idx];
+          if (!cell) continue;
+          // Main visual: gene gives color, lineage affects brightness
+          const base = GENES[cell.gene];
+          let c = base;
+          if (cell.age > 40 && cell.energy > 35) {
+            c = shadeColor(base, 0.55 + ((cell.energy%45)/95));
+          }
+          ctx.fillStyle = c;
+          ctx.globalAlpha = Math.min(0.82, (cell.energy/90 + cell.age/340 + 0.14));
+          ctx.fillRect(x*CELL_SIZE, y*CELL_SIZE, CELL_SIZE-1, CELL_SIZE-1);
+
+          // Rarely: flash a border if recently "born"
+          if (tick - cell.birthTick < 6 && Math.random() < 0.58) {
+            ctx.strokeStyle = "#fff2";
+            ctx.globalAlpha = 0.14;
+            ctx.strokeRect(x*CELL_SIZE, y*CELL_SIZE, CELL_SIZE-2, CELL_SIZE-2);
+          }
+        }
+      }
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Helper for color brightness
+    function shadeColor(color, percent) {
+      // color: "#RRGGBB", percent: 0.6
+      const num = parseInt(color.slice(1),16);
+      let r = (num >> 16) & 0xff;
+      let g = (num >> 8) & 0xff;
+      let b = num & 0xff;
+      r = Math.floor(r * percent);
+      g = Math.floor(g * percent);
+      b = Math.floor(b * percent);
+      return `rgb(${r},${g},${b})`;
+    }
+
+    // --- INFO ---
+    function updateInfo() {
+      infoBox.innerHTML = 
+        `Tick: <b>${tick}</b> | Living: <b>${living}</b> | Lineages: <b>${nextLineage-1}</b><br>` +
+        `Entropy: ${(living/grid.length*100).toFixed(1)}% | <span style="color:#9bf;">Chaos</span>: <b>${Math.random()<COMET_EVENT_CHANCE*2 ? "Possible" : ""}</b>`;
+    }
+
+    // --- MAIN LOOP ---
+    function loop() {
+      tick++;
+      step();
+      entropyCheckAndReseed();
+      if (Math.random() < COMET_EVENT_CHANCE) cometEvent();
+      draw();
+      updateInfo();
+      requestAnimationFrame(loop);
+    }
+
+    // --- INIT ---
+    seedPopulation(INITIAL_POP);
+    loop();
+
+  </script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Prim's Maze - High-Resolution Visualization</title>
+  <style>
+    body { background: #181a1b; }
+    canvas { 
+      display: block; 
+      margin: 24px auto; 
+      background: #222; 
+      border-radius: 8px;
+    }
+    #status { color: #fafafa; font-family: monospace; text-align: center; }
+  </style>
+</head>
+<body>
+<div id="status"></div>
+<canvas id="maze"></canvas>
+<script>
+const W = 101, H = 67;   // Large = denser, more pixel-like; must be odd!
+const cellSize = 6;      // Small = more pixels
+const wallColor = "#282934";
+const pathColor = "#f2f7fd";
+const frontColor = "#ffc300";
+const chosenFrontColor = "#16f078";
+const donePause = 1400;
+
+const canvas = document.getElementById('maze');
+const ctx = canvas.getContext('2d');
+const statusDiv = document.getElementById('status');
+canvas.width = W * cellSize;
+canvas.height = H * cellSize;
+
+function newMazeData() {
+  let grid = [];
+  for (let y = 0; y < H; y++) {
+    let row = [];
+    for (let x = 0; x < W; x++) {
+      row.push(0);
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+function drawMaze(grid, frontierSet, highlightFront, finished) {
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      ctx.save();
+      if (grid[y][x] === 1)        ctx.fillStyle = pathColor;
+      else                         ctx.fillStyle = wallColor;
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      ctx.restore();
+    }
+  // Draw other frontiers
+  if (!finished) {
+    for (const [fx, fy] of frontierSet) {
+      ctx.save();
+      ctx.fillStyle = frontColor;
+      ctx.globalAlpha = 0.6;
+      ctx.fillRect(fx * cellSize, fy * cellSize, cellSize, cellSize);
+      ctx.restore();
+    }
+  }
+  // Draw current (highlight) frontier cell
+  if (highlightFront && !finished) {
+    const [fx, fy] = highlightFront;
+    ctx.save();
+    ctx.fillStyle = chosenFrontColor;
+    ctx.globalAlpha = 1.0;
+    ctx.fillRect(fx * cellSize, fy * cellSize, cellSize, cellSize);
+    ctx.restore();
+  }
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    let j = Math.floor(Math.random() * (i+1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+let grid, frontiers, finished, highlightFrontier, stepDelay;
+function resetMaze() {
+  grid = newMazeData();
+  finished = false;
+  highlightFrontier = null;
+  grid[1][1] = 1;
+  frontiers = [];
+  for (const [nx,ny] of validNeighbors(1,1))
+    if (grid[ny][nx] === 0) {
+      frontiers.push([nx,ny]);
+      grid[ny][nx] = -1;
+    }
+  drawMaze(grid, frontiers, null, finished);
+  statusDiv.innerText = `Generating maze...`;
+  stepDelay = 5; // Fast (5ms), but you can slow it if you want
+}
+
+function validNeighbors(x, y) {
+  const dirs = [[0,-2],[2,0],[0,2],[-2,0]];
+  let res = [];
+  for (const [dx,dy] of dirs) {
+    let nx = x+dx, ny = y+dy;
+    if (nx > 0 && ny > 0 && nx < W && ny < H)
+      res.push([nx,ny]);
+  }
+  shuffle(res);
+  return res;
+}
+
+function stepMaze() {
+  if (frontiers.length === 0) {
+    finished = true;
+    highlightFrontier = null;
+    drawMaze(grid, [], null, finished);
+    statusDiv.innerText = 'Maze completed! (Resetting soon)';
+    setTimeout(()=>{resetMaze(); setTimeout(loopStep, 200);}, donePause);
+    return;
+  }
+  let idx = Math.floor(Math.random() * frontiers.length);
+  let [x, y] = frontiers.splice(idx,1)[0];
+  highlightFrontier = [x, y];
+
+  drawMaze(grid, frontiers, highlightFrontier, false);
+
+  setTimeout(()=>{
+    let connectors = [];
+    const dirs = [[0,-2],[2,0],[0,2],[-2,0]];
+    for (const [dx,dy] of dirs) {
+      let nx = x+dx, ny = y+dy;
+      if (nx >=0 && ny >=0 && nx < W && ny < H && grid[ny][nx] === 1) {
+        connectors.push([nx,ny]);
+      }
+    }
+    if (connectors.length > 0) {
+      let [nx,ny] = connectors[Math.floor(Math.random()*connectors.length)];
+      grid[y][x] = 1;
+      grid[(y+ny)>>1][(x+nx)>>1] = 1;
+    }
+    for (const [nx,ny] of validNeighbors(x,y))
+      if (grid[ny][nx] === 0) {
+        frontiers.push([nx,ny]);
+        grid[ny][nx] = -1;
+      }
+    for(let fy=0; fy<H; fy++)
+      for(let fx=0; fx<W; fx++)
+        if(grid[fy][fx] === -1) grid[fy][fx] = 0;
+    highlightFrontier = null;
+    drawMaze(grid, frontiers, null, false);
+    setTimeout(loopStep, stepDelay);
+  }, stepDelay);
+}
+
+function loopStep() {
+  if (!finished) stepMaze();
+}
+
+resetMaze();
+setTimeout(loopStep, 80);
+</script>
+</body>
+</html>

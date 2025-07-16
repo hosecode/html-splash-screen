@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Prim's Wighted Maze: H</title>
+  <style>
+    body { background: #202224; }
+    canvas { display:block; margin: 16px auto; background: #232436; border-radius: 6px; }
+    #status { color: #fafafa; font-family: monospace; text-align: center; margin-top: 14px; }
+  </style>
+</head>
+<body>
+<div id="status"></div>
+<canvas id="maze"></canvas>
+<script>
+//// Parameters ////
+const W = 61, H = 39;      // Should be odd for best results
+const cellSize = 14;
+const donePause = 1800;
+const stepDelay = 10;
+const animDelay = 18;
+
+//// Heatmap helpers ////
+function lerp(a,b,t) { return a+(b-a)*t; }
+function colorLerp(a, b, t) {
+    return [
+        Math.round(lerp(a[0], b[0], t)),
+        Math.round(lerp(a[1], b[1], t)),
+        Math.round(lerp(a[2], b[2], t))
+    ];
+}
+function rgbStr(arr) { return `rgb(${arr[0]},${arr[1]},${arr[2]})`; }
+function heatColor(v) {
+    // Blue-Green-Yellow-Orange-Red
+    const stops = [
+        [0.0, [36, 80, 194]   ],
+        [0.25,[46, 226, 123]  ],
+        [0.55,[245, 246, 82]  ],
+        [0.80,[248, 177, 26]  ],
+        [1.0, [237,38,80]     ]
+    ];
+    for(let i=1;i<stops.length;i++) {
+        if(v<=stops[i][0]) {
+            let t = (v-stops[i-1][0])/(stops[i][0]-stops[i-1][0]);
+            return colorLerp(stops[i-1][1], stops[i][1], t);
+        }
+    }
+    return stops[stops.length-1][1];
+}
+function noiseGrid(w, h) {
+    // Simple blurred value noise for heatmap
+    let g = [];
+    for(let y=0; y<h; y++) {
+        g[y]=[];
+        for(let x=0; x<w; x++) g[y][x]=Math.random();
+    }
+    for(let pass=0; pass<2; pass++) {
+        let temp = [];
+        for(let y=0; y<h; y++) { temp[y]=[]; for(let x=0; x<w; x++) temp[y][x]=g[y][x]; }
+        for(let y=0; y<h; y++) for(let x=0; x<w; x++) {
+            let sum=0, cnt=0;
+            for(let dy=-1; dy<=1; dy++)
+                for(let dx=-1; dx<=1; dx++) {
+                    let nx=x+dx, ny=y+dy;
+                    if(nx>=0 && ny>=0 && nx<w && ny<h) { sum+=temp[ny][nx]; cnt++; }
+                }
+            g[y][x]=sum/cnt;
+        }
+    }
+    return g;
+}
+const mazePathColor = [245,245,245];
+const chosenFrontColor = [38,255,142];
+const otherFrontColor = [255,195,0];
+const pathHighlightColor = [255,0,40];
+
+//// Maze structures ////
+const canvas = document.getElementById('maze');
+canvas.width = W * cellSize;
+canvas.height = H * cellSize;
+const ctx = canvas.getContext('2d');
+const statusDiv = document.getElementById('status');
+
+let terrain, grid, visited, frontiers, finished, highlightFrontier;
+let mode = "maze";
+let solutionPath = [];
+let animatingPathIdx = 0;
+let stopMazeWhenEndReached = false; // for auto-stop
+
+function between(x0,y0,x1,y1) { return [(x0+x1)>>1, (y0+y1)>>1]; }
+function validNeighbors(x,y) {
+    const dirs = [[0,-2],[2,0],[0,2],[-2,0]];
+    let res = [];
+    for(const [dx,dy] of dirs) {
+        let nx=x+dx,ny=y+dy;
+        if(nx>0&&ny>0&&nx<W&&ny<H) res.push([nx,ny]);
+    }
+    return res;
+}
+function newMazeData() {
+    let g=[];
+    for(let y=0;y<H;y++) { g[y]=[]; for(let x=0;x<W;x++) g[y][x]=0; }
+    return g;
+}
+function newVisited(val=false) {
+    let v=[];
+    for(let y=0;y<H;y++) { v[y]=[]; for(let x=0;x<W;x++) v[y][x]=val; }
+    return v;
+}
+function cellKey(x,y) { return `${x}#${y}`; }
+
+function drawMaze() {
+    // 1. Draw terrain heatmap
+    for(let y=0;y<H;y++)
+        for(let x=0;x<W;x++) {
+            let c=heatColor(terrain[y][x]);
+            ctx.fillStyle = rgbStr(c);
+            ctx.fillRect(x*cellSize,y*cellSize,cellSize,cellSize);
+        }
+    // 2. Draw maze
+    for(let y=0;y<H;y++)
+        for(let x=0;x<W;x++)
+            if(grid[y][x]===1) {
+                ctx.fillStyle = rgbStr(mazePathColor);
+                ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
+            }
+    // 3. Draw solution path
+    if(mode==="path" && solutionPath.length>0) {
+        ctx.save();
+        ctx.lineWidth = Math.max(2,cellSize/3);
+        ctx.strokeStyle = rgbStr(pathHighlightColor);
+        ctx.beginPath();
+        for(let k=0; k<animatingPathIdx && k<solutionPath.length; k++) {
+            let [x,y]=solutionPath[k];
+            let cx = x*cellSize+cellSize/2, cy = y*cellSize+cellSize/2;
+            if(k===0) ctx.moveTo(cx,cy); else ctx.lineTo(cx,cy);
+        }
+        ctx.stroke();
+        ctx.restore();
+        // Draw start/end markers
+        ctx.fillStyle="#38fa27";
+        let [sx,sy]=solutionPath[0];
+        ctx.fillRect(sx*cellSize+cellSize*0.2, sy*cellSize+cellSize*0.2, cellSize*0.6, cellSize*0.6);
+        ctx.fillStyle="#fae527";
+        let [ex,ey]=solutionPath[solutionPath.length-1];
+        ctx.fillRect(ex*cellSize+cellSize*0.15, ey*cellSize+cellSize*0.15, cellSize*0.7, cellSize*0.7);
+    }
+    // 4. Draw frontiers
+    for(const f of frontiers)
+        if(!highlightFrontier || f.x!==highlightFrontier[0] || f.y!==highlightFrontier[1]) {
+            ctx.fillStyle = rgbStr(otherFrontColor);
+            ctx.globalAlpha = 0.70;
+            ctx.fillRect(f.x*cellSize, f.y*cellSize, cellSize, cellSize);
+            ctx.globalAlpha = 1.0;
+        }
+    // 5. Chosen frontier (green)
+    if(highlightFrontier && !finished && mode==="maze") {
+        ctx.fillStyle = rgbStr(chosenFrontColor);
+        ctx.fillRect(highlightFrontier[0]*cellSize, highlightFrontier[1]*cellSize, cellSize, cellSize);
+    }
+}
+
+function resetMaze() {
+    terrain = noiseGrid(W,H);
+    grid = newMazeData();
+    visited = newVisited();
+    finished = false;
+    highlightFrontier = null;
+    frontiers = [];
+    mode = "maze";
+    solutionPath = [];
+    animatingPathIdx = 0;
+    stopMazeWhenEndReached = false;
+    // Start at (1,1)
+    grid[1][1] = 1;
+    visited[1][1] = true;
+    for(const [nx,ny] of validNeighbors(1,1)) {
+        if(!visited[ny][nx]) {
+            frontiers.push({x:nx, y:ny, weight:terrain[ny][nx], parent:[1,1]});
+            visited[ny][nx]=true;
+        }
+    }
+    drawMaze();
+    statusDiv.innerText="Building maze using Prim's MST (weighted by heatmap)...";
+}
+function startMaze() {
+    resetMaze();
+    setTimeout(loopStep,140);
+}
+
+function stepMaze() {
+    if(finished) return;
+    // Pick lowest-weight frontier
+    let minIdx=0;
+    for(let i=1;i<frontiers.length;i++)
+        if(frontiers[i].weight<frontiers[minIdx].weight) minIdx=i;
+    let f=frontiers.splice(minIdx,1)[0];
+    highlightFrontier=[f.x,f.y];
+    drawMaze();
+
+    setTimeout(()=>{
+        // Carve from parent to this cell
+        let par=f.parent;
+        grid[f.y][f.x]=1;
+        let [bx,by]=between(f.x,f.y,par[0],par[1]);
+        grid[by][bx]=1;
+
+        // Check if we've reached the end and should stop
+        if ((f.x === W-2 && f.y === H-2) || (bx === W-2 && by === H-2)) {
+            finished = true;
+            highlightFrontier = null;
+            drawMaze();
+            statusDiv.innerText="Maze stopped at end! Revealing path...";
+            setTimeout(revealShortestPath, donePause);
+            return;
+        }
+
+        for(const [nx,ny] of validNeighbors(f.x,f.y))
+            if(!visited[ny][nx]) {
+                frontiers.push({x:nx,y:ny,weight:terrain[ny][nx],parent:[f.x,f.y]});
+                visited[ny][nx]=true;
+            }
+        highlightFrontier=null;
+        drawMaze();
+        setTimeout(loopStep, stepDelay);
+    },stepDelay);
+}
+function loopStep() {
+    if(!finished && mode==="maze") stepMaze();
+}
+
+// BFS that strictly follows maze corridors (grid[y][x]===1)
+function revealShortestPath() {
+    statusDiv.innerText="Finding shortest path...";
+    let start=[1,1], end=[W-2,H-2];
+    let visitedSP = newVisited();
+    let parentGrid = {};
+    let q = [start];
+    visitedSP[start[1]][start[0]] = true;
+    let found=false;
+    while(q.length>0 && !found) {
+        let [x,y]=q.shift();
+        const ns=[[0,1],[0,-1],[1,0],[-1,0]];
+        for(const [dx,dy] of ns) {
+            let nx=x+dx, ny=y+dy;
+            if(nx>=0&&ny>=0&&nx<W&&ny<H && grid[ny][nx]===1 && !visitedSP[ny][nx]) {
+                parentGrid[cellKey(nx,ny)] = [x,y];
+                if(nx===end[0]&&ny===end[1]){found=true;break;}
+                visitedSP[ny][nx]=true;
+                q.push([nx,ny]);
+            }
+        }
+    }
+    solutionPath = [];
+    let cur = end;
+    while(cur && !(cur[0]===start[0]&&cur[1]===start[1])) {
+        solutionPath.push(cur);
+        cur = parentGrid[cellKey(cur[0],cur[1])];
+    }
+    solutionPath.push(start); solutionPath.reverse();
+    mode="path";
+    animatingPathIdx = 1;
+    statusDiv.innerText="Shortest maze path revealed! (Red = path; green=start, yellow=end)";
+    animatePath();
+}
+
+function animatePath() {
+    drawMaze();
+    if(animatingPathIdx<solutionPath.length) {
+        animatingPathIdx++;
+        setTimeout(animatePath, animDelay);
+    } else {
+        // After pause, restart automatically
+        setTimeout(() => {
+            startMaze();
+        }, donePause);
+    }
+}
+
+////// Automatically start!
+startMaze();
+
+</script>
+</body>
+</html>

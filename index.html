@@ -1,23 +1,25 @@
----
-layout: default
-title: Directory Index
----
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>{{ page.title }}</title>
+  <title>index</title>
 </head>
 <body>
-  <h1>{{ page.title }}</h1>
+ 
   <ul>
-    {% assign doclist = site.pages | sort: "url" %}
-    {% for doc in doclist %}
-      {% if doc.name contains ".html" or doc.name contains ".md" %}
-        <li><a href="{{ doc.url }}">{{ doc.url }}</a></li>
-      {% endif %}
-    {% endfor %}
+      <li><a href="telemetry.html"></a></li>
+      <li><a href="telemetry-v2.html"></a></li>
+      <li><a href="events.html"></a></li>
+      <li><a href="events-high-energy.html"></a></li>
+      <li><a href="events-logs-metrics.html"></a></li>
+      <li><a href="logging.html"></a></li>
+      <li><a href="particle.html"></a></li>
+      <li><a href="prims-maze.html"></a></li>
+      <li><a href="prims-weighted-maze.html"></a></li>
+      <li><a href="sliding-window.html"></a></li>
+      <li><a href=""></a></li>
+      <li><a href=""></a></li>
+      <li><a href=""></a></li>
   </ul>
 </body>
 </html>

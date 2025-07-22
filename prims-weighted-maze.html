@@ -2,11 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Prim's Wighted Maze: H</title>
+  <title>Prim's Weighted Maze: H</title>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@500&display=swap" rel="stylesheet">
   <style>
-    body { background: #202224; }
-    canvas { display:block; margin: 16px auto; background: #232436; border-radius: 6px; }
-    #status { color: #fafafa; font-family: monospace; text-align: center; margin-top: 14px; }
+    body {
+      margin: 0;
+      background: #0b1d2a;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    canvas {
+      display: block;
+      margin: 16px auto;
+      background: transparent;
+      border-radius: 6px;
+      box-shadow: 0 4px 24px #03131e66;
+    }
+    #status {
+      color: #ffffff;
+      font-family: 'Lexend Deca', monospace, sans-serif;
+      text-align: center;
+      margin-top: 18px;
+      font-size: 20px;
+      letter-spacing: 1.5px;
+      text-shadow: 0 2px 14px #041a2b;
+    }
   </style>
 </head>
 <body>
@@ -30,22 +49,33 @@ function colorLerp(a, b, t) {
     ];
 }
 function rgbStr(arr) { return `rgb(${arr[0]},${arr[1]},${arr[2]})`; }
+function hexToRgbArr(hex) {
+    hex = hex.replace('#','');
+    if (hex.length===3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    let num = parseInt(hex,16);
+    return [(num>>16)&255, (num>>8)&255, num&255];
+}
+const primsGradientColorsHex = [
+  '#e63946', // red-pink
+  '#f1a208', // orange
+  '#fae527', // yellow
+  '#38fa27', // green
+  '#4cc9f0', // cyan
+  '#4361ee', // blue
+  '#9d4edd', // purple
+  '#ff006e'  // magenta
+];
+const primsGradientColors = primsGradientColorsHex.map(hexToRgbArr);
+
 function heatColor(v) {
-    // Blue-Green-Yellow-Orange-Red
-    const stops = [
-        [0.0, [36, 80, 194]   ],
-        [0.25,[46, 226, 123]  ],
-        [0.55,[245, 246, 82]  ],
-        [0.80,[248, 177, 26]  ],
-        [1.0, [237,38,80]     ]
-    ];
-    for(let i=1;i<stops.length;i++) {
-        if(v<=stops[i][0]) {
-            let t = (v-stops[i-1][0])/(stops[i][0]-stops[i-1][0]);
-            return colorLerp(stops[i-1][1], stops[i][1], t);
-        }
-    }
-    return stops[stops.length-1][1];
+    // Interpolate across even-spaced, high-contrast theme accents.
+    const n = primsGradientColors.length;
+    v = Math.max(0, Math.min(1, v));
+    const idx = v * (n-1);
+    const i = Math.floor(idx);
+    const t = idx - i;
+    if (i >= n-1) return primsGradientColors[n-1];
+    return colorLerp(primsGradientColors[i], primsGradientColors[i+1], t);
 }
 function noiseGrid(w, h) {
     // Simple blurred value noise for heatmap
@@ -69,10 +99,10 @@ function noiseGrid(w, h) {
     }
     return g;
 }
-const mazePathColor = [245,245,245];
-const chosenFrontColor = [38,255,142];
-const otherFrontColor = [255,195,0];
-const pathHighlightColor = [255,0,40];
+const mazePathColor = [255,255,255]; // White for contrast over theme
+const chosenFrontColor = hexToRgbArr('#43aa8b');   // Theme green accent
+const otherFrontColor = hexToRgbArr('#4cc9f0');    // Theme cyan accent
+const pathHighlightColor = hexToRgbArr('#e63946'); // Vibrant theme red
 
 //// Maze structures ////
 const canvas = document.getElementById('maze');
@@ -110,19 +140,47 @@ function newVisited(val=false) {
 function cellKey(x,y) { return `${x}#${y}`; }
 
 function drawMaze() {
+    // Clear the canvas to avoid ghosting
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
     // 1. Draw terrain heatmap
+    function drawOct(ctx, cx, cy, r) {
+        ctx.beginPath();
+        for(let i=0; i<8; i++) {
+            const ang = (Math.PI / 4) * i - (Math.PI / 8);
+            const x = cx + r * Math.cos(ang);
+            const y = cy + r * Math.sin(ang);
+            if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+    }
+
     for(let y=0;y<H;y++)
         for(let x=0;x<W;x++) {
             let c=heatColor(terrain[y][x]);
+            ctx.save();
+            ctx.globalAlpha = 0.50;
+            let cx = x*cellSize + cellSize/2;
+            let cy = y*cellSize + cellSize/2;
+            let r = cellSize * 0.56;
+            drawOct(ctx, cx, cy, r);
             ctx.fillStyle = rgbStr(c);
-            ctx.fillRect(x*cellSize,y*cellSize,cellSize,cellSize);
+            ctx.fill();
+            ctx.restore();
         }
     // 2. Draw maze
     for(let y=0;y<H;y++)
         for(let x=0;x<W;x++)
             if(grid[y][x]===1) {
+                ctx.save();
+                ctx.globalAlpha = 0.9;
+                let cx = x*cellSize + cellSize/2;
+                let cy = y*cellSize + cellSize/2;
+                let r = cellSize * 0.54;
+                drawOct(ctx, cx, cy, r);
                 ctx.fillStyle = rgbStr(mazePathColor);
-                ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
+                ctx.fill();
+                ctx.restore();
             }
     // 3. Draw solution path
     if(mode==="path" && solutionPath.length>0) {
@@ -162,6 +220,19 @@ function drawMaze() {
 
 function resetMaze() {
     terrain = noiseGrid(W,H);
+
+    // Normalize the heatmap: expand values to 0..1 to maximize color range
+    let tmin = Infinity, tmax = -Infinity;
+    for(let y=0; y<H; y++) for(let x=0; x<W; x++) {
+        let v = terrain[y][x];
+        if(v < tmin) tmin = v;
+        if(v > tmax) tmax = v;
+    }
+    const tspan = tmax - tmin || 1;
+    for(let y=0; y<H; y++) for(let x=0; x<W; x++) {
+        terrain[y][x] = (terrain[y][x] - tmin) / tspan;
+    }
+
     grid = newMazeData();
     visited = newVisited();
     finished = false;
